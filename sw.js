@@ -1,5 +1,5 @@
 // WorkBuddy Service Worker · 离线缓存
-const CACHE = 'workbuddy-v11-gk-cycle-20260802c';
+const CACHE = 'workbuddy-v12-daily-20260804';
 const ASSETS = [
   './',
   './index.html',
