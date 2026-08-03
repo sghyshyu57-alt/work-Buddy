@@ -44,32 +44,37 @@ const STORE_GK = {
   setGkFav:   (v) => DB.set('wb_gk_fav', v),
   cycle:      () => DB.get('wb_cycle', { periods: [], settings: { cycleLen: 28, periodLen: 5 } }),
   setCycle:   (v) => DB.set('wb_cycle', v),
+  // 常识池缓存:每次拉取的条目累积存储,供离线/收藏回显
+  gkPool:     () => DB.get('wb_gk_pool', []),
+  setGkPool:  (v) => DB.set('wb_gk_pool', v),
+  gkDailyCache:(d) => DB.get('wb_gk_daily_' + d, null),
+  setGkDailyCache:(d, v) => DB.set('wb_gk_daily_' + d, v),
 };
 
-// ============= 考公常识库(按日期) =============
-const GK_COMMON = [
-  // 时政要闻
-  { id:'c01', date:'2026-08-02', field:'时政', title:'二十届四中全会审议通过「十五五」规划建议', brief:'2025年10月二十届四中全会审议通过《中共中央关于制定国民经济和社会发展第十五个五年规划的建议》,提出2035年基本实现社会主义现代化远景目标。', source:'新华社 / 二十届四中全会公报', detail:'核心要点:高质量发展、新发展格局、科技自立自强、共同富裕、双碳目标。' },
-  { id:'c02', date:'2026-08-01', field:'时政', title:'全国统一大市场建设持续推进', brief:'2025年《加快建设全国统一大市场的意见》深化实施,破除地方保护和市场分割,畅通国内大循环。', source:'国务院政策文件', detail:'重点任务:统一市场基础制度规则、推进市场设施高标准联通、打造统一的要素和资源市场。' },
-  { id:'c03', date:'2026-07-31', field:'时政', title:'「新质生产力」成为发展关键词', brief:'习近平总书记提出因地制宜发展新质生产力,以科技创新引领产业创新,改造提升传统产业。', source:'人民日报', detail:'新质生产力以劳动者、劳动资料、劳动对象及其优化组合的跃升为基本内涵。' },
-  { id:'c04', date:'2026-07-30', field:'时政', title:'扩大内需战略:提振消费专项行动', brief:'2025年多部门联合实施提振消费专项行动,推动以旧换新、服务消费扩容提质。', source:'国家发改委', detail:'消费是拉动经济增长的重要引擎,重点领域:汽车、家电、住房、服务消费。' },
-  // 法律基础
-  { id:'c05', date:'2026-08-02', field:'法律', title:'《民法典》:社会生活的百科全书', brief:'2021年1月1日施行,共7编1260条,包括总则、物权、合同、人格权、婚姻家庭、继承、侵权责任,人格权独立成编是最大亮点。', source:'《中华人民共和国民法典》', detail:'总则编规定民事主体、民事权利、民事法律行为等基础制度;人格权编含生命权、身体权、健康权、姓名权、名誉权、隐私权等。' },
-  { id:'c06', date:'2026-08-01', field:'法律', title:'宪法是国家的根本法', brief:'现行宪法1982年通过,历经五次修正,具有最高法律效力,一切法律不得与宪法相抵触。', source:'《中华人民共和国宪法》', detail:'宪法规定国家根本制度、根本任务和公民基本权利义务,是全国各族人民共同遵守的行为准则。' },
-  { id:'c07', date:'2026-07-31', field:'法律', title:'行政法的基本原则', brief:'合法行政、合理行政、程序正当、高效便民、诚实守信、权责统一,是行政机关行使职权必须遵循的准则。', source:'行政法学基础', detail:'程序正当包括:信息公开、公众参与、说明理由、听取申辩等。' },
-  // 经济常识
-  { id:'c08', date:'2026-08-02', field:'经济', title:'恩格尔系数:衡量生活水平的标尺', brief:'食品支出占消费总支出的比重。系数越低生活水平越高:>59%贫困,50-59%温饱,40-50%小康,30-40%富裕,<30%最富裕。中国2024年约29.8%。', source:'国家统计局', detail:'恩格尔系数是国际上通用的衡量居民生活水平高低的重要指标。' },
-  { id:'c09', date:'2026-08-01', field:'经济', title:'GDP:国内生产总值', brief:'一定时期内一个国家(地区)境内所有常住单位生产的最终产品和服务价值总和。区分名义GDP与实际GDP(扣除价格因素)。', source:'国家统计局', detail:'GDP增速是宏观经济运行的核心指标,2025年政府工作报告目标约5%左右。' },
-  { id:'c10', date:'2026-07-31', field:'经济', title:'货币政策三大工具', brief:'存款准备金率、再贴现政策、公开市场操作(OMO),央行通过三大工具调节市场货币供应量。', source:'中国人民银行', detail:'降准增加可贷资金、降息降低融资成本,均属宽松货币政策。' },
-  // 人文历史
-  { id:'c11', date:'2026-08-02', field:'人文历史', title:'《诗经》:中国最早的诗歌总集', brief:'收录西周初年至春秋中叶诗歌305篇,分风、雅、颂三部分;表现手法为赋、比、兴,合称「六义」。', source:'中国文学史', detail:'风:各诸侯国乐调,共160篇;雅:周王朝京都地区正乐,105篇;颂:宗庙祭祀乐歌,40篇。' },
-  { id:'c12', date:'2026-08-01', field:'人文历史', title:'科举制度:影响千年的选官制度', brief:'隋朝创立(隋炀帝设进士科),唐朝完善,1905年清末废除。分乡试、会试、殿试三级。', source:'中国通史', detail:'殿试一甲前三名:状元、榜眼、探花,合称「三鼎甲」。' },
-  { id:'c13', date:'2026-07-31', field:'人文历史', title:'丝绸之路与「一带一路」', brief:'古代丝绸之路由张骞凿空西域开辟,分陆上(长安-河西走廊-中亚)与海上两条;现代「一带一路」倡议2013年提出。', source:'中国历史常识', detail:'一带一路:丝绸之路经济带 + 21世纪海上丝绸之路。' },
-  // 科技常识
-  { id:'c14', date:'2026-08-02', field:'科技', title:'光年是长度单位而非时间单位', brief:'光在真空中一年传播的距离,约9.46万亿千米。常用语衡量星际空间距离,如银河系直径约10万光年。', source:'天文常识', detail:'1光年 ≈ 9.46 × 10^12 千米 = 63241 天文单位。' },
-  { id:'c15', date:'2026-08-01', field:'科技', title:'「嫦娥六号」实现月球背面采样返回', brief:'2024年6月嫦娥六号任务成功完成月球背面南极-艾特肯盆地采样返回,人类首次月背采样。', source:'国家航天局', detail:'嫦娥工程三步走:绕、落、回;后续将推进月球科研站建设。' },
-  { id:'c16', date:'2026-07-30', field:'科技', title:'芯片制造:光刻机与制程', brief:'光刻机是芯片制造核心设备,制程越小集成度越高(7nm/5nm/3nm)。ASML垄断EUV光刻机市场。', source:'科技常识', detail:'国产芯片自主可控是科技自立自强的重要环节。' },
-];
+// ============= 每日常识:远程拉取(每日由爬虫自动生成) =============
+// 当天: daily.json ;历史日期: daily/daily-YYYY-MM-DD.json
+async function fetchGkDaily(dateStr) {
+  // 1) 本地缓存(上次成功拉取过)
+  const cached = STORE_GK.gkDailyCache(dateStr);
+  // 2) 远程拉取
+  const path = dateStr === STORE.todayKey() ? 'daily.json' : `daily/daily-${dateStr}.json`;
+  try {
+    const resp = await fetch(path, { cache: 'no-store' });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data && data.items && data.items.length) {
+        STORE_GK.setGkDailyCache(dateStr, data);
+        // 累积到常识池(去重)
+        const pool = STORE_GK.gkPool();
+        const ids = new Set(pool.map(p => p.id));
+        data.items.forEach(it => { if (!ids.has(it.id)) { pool.push(it); ids.add(it.id); } });
+        STORE_GK.setGkPool(pool);
+        return data;
+      }
+    }
+  } catch (e) { /* 离线或未生成,走缓存 */ }
+  return cached || null;
+}
 
 // ============= 考公训练题库(7 分类) =============
 const GK_QUIZ = [
@@ -437,42 +442,28 @@ function viewGk() {
   else renderGkReview();
 }
 
-// ---------- 常识子页 ----------
-function renderGkCommon() {
+// ---------- 常识子页(每日远程拉取) ----------
+async function renderGkCommon() {
   const today = STORE.todayKey();
   if (!_gkDate) _gkDate = today;
   const gkReads = STORE_GK.gkReads();
   const todayLearned = (gkReads[_gkDate] || []);
 
-  // 领域筛选
+  // 领域筛选 tabs + 日期导航(先渲染框架)
   const fields = ['all','时政','法律','经济','人文历史','科技'];
-  let list = GK_COMMON.filter(c => c.date === _gkDate);
-  if (_gkField !== 'all') list = list.filter(c => c.field === _gkField);
-  if (list.length === 0) {
-    // 该日期没有对应领域的条目,放宽到全部
-    list = GK_COMMON.filter(c => c.date === _gkDate);
-  }
-
-  // 分页
-  const total = list.length;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  if (_gkPage > pages) _gkPage = pages;
-  const pageList = list.slice((_gkPage-1)*PAGE_SIZE, _gkPage*PAGE_SIZE);
-
   $('#gk-body').innerHTML = `
     <div class="tabs" style="margin-bottom:8px;">
       ${fields.map(f => `<div class="tab ${_gkField===f?'active':''}" data-f="${f}">${f==='all'?'全部':f}</div>`).join('')}
     </div>
-
     <div class="date-nav">
-      <button class="btn btn-sm btn-ghost" onclick="gkShiftDate(-1)">← ${shiftDate(_gkDate,-1)}</button>
+      <button class="btn btn-sm btn-ghost" onclick="gkShiftDate(-1)">← 前一天</button>
       <div class="date-nav-center">
         <div class="date-nav-day">${_gkDate}</div>
         <button class="btn btn-sm" onclick="gkShiftDate(0)">回到今天</button>
       </div>
-      <button class="btn btn-sm btn-ghost" onclick="gkShiftDate(1)">${shiftDate(_gkDate,1)} →</button>
+      <button class="btn btn-sm btn-ghost" onclick="gkShiftDate(1)">后一天 →</button>
     </div>
-
+    <div id="gk-common-loading" style="text-align:center;padding:30px;color:var(--oak);font-size:13px;">🌿 正在获取今日内容...</div>
     <div id="gk-common-list"></div>
     <div class="gk-pager" id="gk-common-pager"></div>`;
 
@@ -482,19 +473,47 @@ function renderGkCommon() {
     renderGkCommon();
   });
 
+  // 远程拉取当天/历史日期的常识
+  const data = await fetchGkDaily(_gkDate);
+  const loading = $('#gk-common-loading');
+  if (loading) loading.style.display = 'none';
+
+  if (!data || !data.items || !data.items.length) {
+    $('#gk-common-list').innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">🔍</div>
+        ${_gkDate === today ? '今日内容尚未生成,请稍后刷新(每日自动更新)' : '这一天暂无内容记录'}
+      </div>`;
+    return;
+  }
+
+  // 领域筛选
+  let list = data.items;
+  if (_gkField !== 'all') {
+    const filtered = list.filter(c => c.field === _gkField);
+    if (filtered.length) list = filtered;
+  }
+
+  // 分页
+  const total = list.length;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  if (_gkPage > pages) _gkPage = pages;
+  const pageList = list.slice((_gkPage-1)*PAGE_SIZE, _gkPage*PAGE_SIZE);
+
   const listEl = $('#gk-common-list');
   listEl.innerHTML = pageList.map(c => {
     const learned = todayLearned.includes(c.id);
     const faved = isFav('common', c.id);
+    const sourceLink = c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener" style="color:var(--leaf);">${esc(c.source)} ↗</a>` : esc(c.source);
     return `
       <div class="feed-item" style="position:relative;">
         <div class="feed-cat">${esc(c.field)}</div>
         <div class="feed-title">${esc(c.title)}</div>
         <div class="feed-text">${esc(c.brief)}</div>
-        <div class="common-src">📎 ${esc(c.source)}</div>
-        <details class="common-detail"><summary>查看详解</summary>${esc(c.detail||c.brief)}</details>
+        <div class="common-src">📎 ${sourceLink}</div>
+        ${c.detail ? `<details class="common-detail"><summary>查看详解</summary>${esc(c.detail)}</details>` : ''}
         <div class="feed-actions">
-          <span class="left">${c.date}</span>
+          <span class="left">${_gkDate}</span>
           <span>
             <button class="btn btn-sm btn-ghost" onclick="toggleGkFav('common','${c.id}')">${faved?'★ 已收藏':'☆ 收藏'}</button>
             ${learned ? '<span style="color:var(--moss);font-size:11px;font-weight:700;">✓ 已学习</span>' :
@@ -502,12 +521,12 @@ function renderGkCommon() {
           </span>
         </div>
       </div>`;
-  }).join('') || '<div class="empty"><div class="empty-icon">📖</div>这一天还没有常识内容</div>';
+  }).join('');
 
   // 分页
   const pager = $('#gk-common-pager');
   pager.innerHTML = pages > 1 ? Array.from({length: pages}, (_, i) =>
-    `<button class="btn btn-sm ${_gkPage===i+1?'':''}" style="${_gkPage===i+1?'background:var(--deep);color:var(--cream);':''}" onclick="_gkPage=${i+1};renderGkCommon()">${i+1}</button>`).join('') : '';
+    `<button class="btn btn-sm" style="${_gkPage===i+1?'background:var(--deep);color:var(--cream);':''}" onclick="_gkPage=${i+1};renderGkCommon()">${i+1}</button>`).join('') : '';
 }
 
 window.gkShiftDate = function(days) {
@@ -657,7 +676,8 @@ function renderGkReview() {
       </div>`).join('');
   } else {
     let html = '';
-    const commons = favCommon.map(f => GK_COMMON.find(c => c.id === f.refId)).filter(Boolean);
+    const pool = STORE_GK.gkPool();
+    const commons = favCommon.map(f => pool.find(c => c.id === f.refId)).filter(Boolean);
     if (commons.length) {
       html += `<div class="card"><div class="card-hd">📖 收藏的常识</div>${commons.map(c => `
         <div class="feed-item">
@@ -665,7 +685,7 @@ function renderGkReview() {
           <div class="feed-title">${esc(c.title)}</div>
           <div class="feed-text">${esc(c.brief)}</div>
           <div class="feed-actions">
-            <span class="left">${c.date} · ${esc(c.source)}</span>
+            <span class="left">${esc(c.source)}</span>
             <button class="btn btn-sm btn-ghost" onclick="toggleGkFav('common','${c.id}')">取消收藏</button>
           </div>
         </div>`).join('')}</div>`;
