@@ -47,6 +47,9 @@ const STORE_GK = {
   // 常识池缓存:每次拉取的条目累积存储,供离线/收藏回显
   gkPool:     () => DB.get('wb_gk_pool', []),
   setGkPool:  (v) => DB.set('wb_gk_pool', v),
+  // 图推题池缓存
+  gkQuizPool: () => DB.get('wb_gk_quizpool', []),
+  setGkQuizPool:(v) => DB.set('wb_gk_quizpool', v),
   gkDailyCache:(d) => DB.get('wb_gk_daily_' + d, null),
   setGkDailyCache:(d, v) => DB.set('wb_gk_daily_' + d, v),
 };
@@ -62,41 +65,28 @@ async function fetchGkDaily(dateStr) {
     const resp = await fetch(path, { cache: 'no-store' });
     if (resp.ok) {
       const data = await resp.json();
-      if (data && data.items && data.items.length) {
+      if (data && (data.items?.length || data.quiz?.length)) {
         STORE_GK.setGkDailyCache(dateStr, data);
         // 累积到常识池(去重)
-        const pool = STORE_GK.gkPool();
-        const ids = new Set(pool.map(p => p.id));
-        data.items.forEach(it => { if (!ids.has(it.id)) { pool.push(it); ids.add(it.id); } });
-        STORE_GK.setGkPool(pool);
+        if (data.items) {
+          const pool = STORE_GK.gkPool();
+          const ids = new Set(pool.map(p => p.id));
+          data.items.forEach(it => { if (!ids.has(it.id)) { pool.push(it); ids.add(it.id); } });
+          STORE_GK.setGkPool(pool);
+        }
+        // 图推题入池
+        if (data.quiz) {
+          const qp = STORE_GK.gkQuizPool();
+          const qids = new Set(qp.map(q => q.id));
+          data.quiz.forEach(q => { if (!qids.has(q.id)) { qp.push(q); qids.add(q.id); } });
+          STORE_GK.setGkQuizPool(qp);
+        }
         return data;
       }
     }
   } catch (e) { /* 离线或未生成,走缓存 */ }
   return cached || null;
 }
-
-// ============= 考公训练题库(7 分类) =============
-const GK_QUIZ = [
-  // ---- 行测:言语理解 ----
-  { id:'q01', section:'行测', category:'言语理解', level:'基础', question:'填入画横线部分最恰当的一项是:改革攻坚之路,唯有______,方能行稳致远。', options:['A. 一蹴而就','B. 驰而不息','C. 半途而废','D. 见异思迁'], answer:'B', explain:'「驰而不息」意为奔驰不停息,比喻坚持不懈、持之以恒,契合改革长期推进的语境。A项「一蹴而就」与后文「行稳致远」矛盾;C、D项语义消极,均排除。', src:'国考言语理解真题风格' },
-  { id:'q02', section:'行测', category:'言语理解', level:'进阶', question:'下列句子没有语病的一项是:', options:['A. 通过这次实践活动,使我深受教育。','B. 我们要养成节约用水的好习惯。','C. 他的写作水平明显有了很大的提高和改进。','D. 能否坚持锻炼是身体健康的重要保证。'], answer:'B', explain:'A项「通过...使...」缺主语,删「通过」或「使」;C项「提高」与「改进」语义重复,删其一;D项两面对一面,「能否」对应「是否健康」。B项无误。', src:'言语理解病句辨析' },
-  // ---- 行测:判断推理 ----
-  { id:'q03', section:'行测', category:'判断推理', level:'基础', question:'如果「所有成功的企业都注重创新」为真,那么以下哪项一定为假?', options:['A. 某注重创新的企业是成功的','B. 某不注重创新的企业是成功的','C. 某成功的企业不注重创新','D. 所有注重创新的企业都成功'], answer:'C', explain:'「所有成功的企业都注重创新」,即成功→注重创新。逆否命题:不注重创新→不成功。C项「成功且不注重创新」与条件矛盾,必为假。', src:'逻辑判断·逆否命题' },
-  { id:'q04', section:'行测', category:'判断推理', level:'进阶', question:'甲乙丙三人只有一人是教师。甲说:「我是教师」;乙说:「甲不是教师」;丙说:「我不是教师」。已知三人中只有一人说真话,则教师是:', options:['A. 甲','B. 乙','C. 丙','D. 无法确定'], answer:'C', explain:'若甲为教师,则甲真、乙假、丙真,两人真,不符;若乙为教师,则甲假、乙真、丙真,不符;若丙为教师,则甲假、乙真、丙假,恰一人真。故教师是丙。', src:'逻辑判断·真假话' },
-  // ---- 行测:数量关系 ----
-  { id:'q05', section:'行测', category:'数量关系', level:'基础', question:'一项工程,甲单独做需10天完成,乙单独做需15天完成。两人合作,需要多少天完成?', options:['A. 5天','B. 6天','C. 7.5天','D. 12天'], answer:'B', explain:'甲效率1/10,乙效率1/15,合作效率1/10+1/15=3/30+2/30=1/6,故1÷(1/6)=6天。', src:'工程问题·合作效率' },
-  { id:'q06', section:'行测', category:'数量关系', level:'冲刺', question:'某商品按定价的八折出售,仍可获得20%的利润,若成本为240元,则定价为多少元?', options:['A. 300元','B. 320元','C. 360元','D. 400元'], answer:'C', explain:'八折后售价=240×(1+20%)=288元,定价=288÷0.8=360元。', src:'经济利润问题' },
-  // ---- 行测:资料分析 ----
-  { id:'q07', section:'行测', category:'资料分析', level:'基础', question:'2024年某省粮食产量5800万吨,同比增长3.6%,则2023年该省粮食产量约为:', options:['A. 5600万吨','B. 5560万吨','C. 6010万吨','D. 5480万吨'], answer:'A', explain:'基期量=现期量÷(1+增长率)=5800÷1.036≈5598万吨,最接近5600万吨。', src:'资料分析·基期量' },
-  { id:'q08', section:'行测', category:'资料分析', level:'进阶', question:'某市2024年GDP为1.2万亿元,其中第三产业占比58%,则第三产业增加值为:', options:['A. 6960亿元','B. 696亿元','C. 5800亿元','D. 6480亿元'], answer:'A', explain:'1.2万亿×58%=1.2×0.58万亿=0.696万亿=6960亿元。', src:'资料分析·现期比重' },
-  // ---- 申论:材料阅读 ----
-  { id:'q09', section:'申论', category:'材料阅读', level:'基础', question:'(材料略)某村通过「党支部+合作社+农户」模式盘活闲置土地,发展特色种植。下列对材料主旨概括最准确的是:', options:['A. 农业发展依赖政府补贴','B. 多元主体协同是乡村产业振兴的有效路径','C. 城市资本应主导农村资源开发','D. 土地流转可以一劳永逸解决农民增收'], answer:'B', explain:'材料核心在「党支部+合作社+农户」多元主体协同,答案为B。A项以偏概全、C项与材料无关、D项绝对化。', src:'申论材料概括' },
-  // ---- 申论:归纳概括 ----
-  { id:'q10', section:'申论', category:'归纳概括', level:'进阶', question:'材料中某社区居家养老服务存在的主要问题,以下概括最准确的一组是:', options:['A. 设施老化、人手不足','B. 参与度低、信息不畅、资源分散','C. 资金短缺、态度消极','D. 场地有限、费用过高'], answer:'B', explain:'归纳概括要求全面、准确、有条理。材料分别提到老人参与度低、信息传递不畅、各类资源分散三方面,故B项最全面。A/C/D均只对应材料局部信息。', src:'申论归纳概括' },
-  // ---- 申论:写作要点 ----
-  { id:'q11', section:'申论', category:'写作要点', level:'冲刺', question:'围绕「青年干部成长」写一篇议论文,以下关于分论点设置最合理的是:', options:['A. 仰望星空、脚踏实地、担当作为,层层递进','B. 只谈理想信念,忽略实践','C. 空谈理论学习,不接地气','D. 罗列数据事实,缺乏观点'], answer:'A', explain:'议论文分论点应层次清晰、逻辑递进。「仰望星空(理想)→脚踏实地(实践)→担当作为(行动)」构成完整的成长路径,契合主题。', src:'申论写作·论点设置' },
-];
 
 // ============= 工具 =============
 const $ = (s, p=document) => p.querySelector(s);
@@ -373,34 +363,6 @@ window.markCommonLearned = function(id) {
   }
 };
 
-// 答题判分
-window.answerQuiz = function(qid, pick) {
-  const q = GK_QUIZ.find(x => x.id === qid);
-  if (!q) return;
-  const correct = pick === q.answer;
-  const progress = STORE_GK.gkProgress();
-  if (correct) {
-    progress.correct[qid] = (progress.correct[qid] || 0) + 1;
-    // 答对奖励:0.2/题,每日封顶 5 题
-    const today = STORE.todayKey();
-    const reward = STORE_GK.gkReward();
-    const count = reward[today] || 0;
-    if (count < 5) {
-      reward[today] = count + 1;
-      STORE_GK.setGkReward(reward);
-      addCoin(0.2, `答对「${q.category}」题`);
-      toast('✅ 回答正确 +0.2 金币');
-    } else {
-      toast('✅ 回答正确(今日奖励已达上限)');
-    }
-  } else {
-    progress.wrong[qid] = (progress.wrong[qid] || 0) + 1;
-    toast('❌ 回答错误,已收入错题集');
-  }
-  STORE_GK.setGkProgress(progress);
-  renderGkQuiz(qid);
-};
-
 // 移除错题
 window.removeWrong = function(qid) {
   const progress = STORE_GK.gkProgress();
@@ -409,11 +371,6 @@ window.removeWrong = function(qid) {
   viewGk();
   toast('已从错题集移除');
 };
-
-// 难度样式
-function diffClass(level) {
-  return { '基础':'basic', '进阶':'mid', '冲刺':'hard' }[level] || 'basic';
-}
 
 function viewGk() {
   $('#page-title').innerHTML = '🎯 考公专项';
@@ -490,7 +447,7 @@ async function renderGkCommon() {
   // 领域筛选
   let list = data.items;
   if (_gkField !== 'all') {
-    const filtered = list.filter(c => c.field === _gkField);
+    const filtered = list.filter(c => c.field === _gkField || (c.field === '常识真题' && _gkField !== '时政'));
     if (filtered.length) list = filtered;
   }
 
@@ -504,6 +461,33 @@ async function renderGkCommon() {
   listEl.innerHTML = pageList.map(c => {
     const learned = todayLearned.includes(c.id);
     const faved = isFav('common', c.id);
+    // 真题类型:渲染为题干+选项+答题交互,来源标在题头
+    if (c.type === 'zhen') {
+      return `
+        <div class="quiz-card zhen-card">
+          <div class="quiz-head">
+            <span class="zhen-badge">📝 真题·常识判断</span>
+            <span class="quiz-cat">${esc(c.source)}</span>
+            <button class="fav-star ${faved?'active':''}" onclick="toggleGkFav('common','${c.id}')">${faved?'★':'☆'}</button>
+          </div>
+          <div class="quiz-question">${esc(c.stem)}</div>
+          <div class="quiz-options" id="zhen-opt-${c.id}">
+            ${c.options.map(o => {
+              const letter = o[0];
+              return `<div class="quiz-option" data-q="${c.id}" data-p="${letter}" data-a="${c.answer}" data-correct="${letter===c.answer}">
+                <span class="quiz-opt-letter">${letter}</span><span>${esc(o.slice(2))}</span>
+              </div>`;
+            }).join('')}
+          </div>
+          <div class="quiz-explain" id="zhen-exp-${c.id}" style="display:none;"></div>
+          <div class="feed-actions" style="margin-top:10px;">
+            <span class="left">${_gkDate} · ${esc(c.source)}</span>
+            ${learned ? '<span style="color:var(--moss);font-size:11px;font-weight:700;">✓ 已学习</span>' :
+              `<button class="btn btn-sm" onclick="markCommonLearned('${c.id}')">标记已学</button>`}
+          </div>
+        </div>`;
+    }
+    // 普通条目(时政等)
     const sourceLink = c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener" style="color:var(--leaf);">${esc(c.source)} ↗</a>` : esc(c.source);
     return `
       <div class="feed-item" style="position:relative;">
@@ -523,11 +507,62 @@ async function renderGkCommon() {
       </div>`;
   }).join('');
 
+  // 绑定真题答题事件
+  $$('.quiz-option[data-q^="g"]').forEach(opt => {
+    if (opt.closest('#zhen-opt-' + opt.dataset.q)) {
+      opt.onclick = () => {
+        const qid = opt.dataset.q, pick = opt.dataset.p;
+        answerZhen(qid, pick);
+      };
+    }
+  });
+
   // 分页
   const pager = $('#gk-common-pager');
   pager.innerHTML = pages > 1 ? Array.from({length: pages}, (_, i) =>
     `<button class="btn btn-sm" style="${_gkPage===i+1?'background:var(--deep);color:var(--cream);':''}" onclick="_gkPage=${i+1};renderGkCommon()">${i+1}</button>`).join('') : '';
 }
+
+// 常识真题答题
+window.answerZhen = function(id, pick) {
+  const pool = STORE_GK.gkPool();
+  const item = pool.find(x => x.id === id);
+  if (!item) return;
+  const correct = pick === item.answer;
+  const optEls = $$(`#zhen-opt-${id} .quiz-option`);
+  optEls.forEach(o => { o.style.pointerEvents = 'none'; });
+  optEls.forEach(o => {
+    if (o.dataset.p === item.answer) o.classList.add('correct');
+    else if (o.dataset.p === pick) o.classList.add('wrong');
+  });
+  const exp = $('#zhen-exp-' + id);
+  if (exp) {
+    exp.style.display = 'block';
+    exp.innerHTML = correct
+      ? `✅ 回答正确!答案:${item.answer} | 来源:${esc(item.source)}`
+      : `❌ 回答错误。正确答案:${item.answer} | 来源:${esc(item.source)}`;
+  }
+  const progress = STORE_GK.gkProgress();
+  if (correct) {
+    progress.correct[id] = (progress.correct[id] || 0) + 1;
+    // 答对奖励:0.2/题,每日封顶 5 题
+    const today = STORE.todayKey();
+    const reward = STORE_GK.gkReward();
+    const count = reward[today] || 0;
+    if (count < 5) {
+      reward[today] = count + 1;
+      STORE_GK.setGkReward(reward);
+      addCoin(0.2, '答对常识真题');
+      toast('✅ 回答正确 +0.2 金币');
+    } else {
+      toast('✅ 回答正确(今日奖励已达上限)');
+    }
+  } else {
+    progress.wrong[id] = (progress.wrong[id] || 0) + 1;
+    toast('❌ 回答错误,已收入错题集');
+  }
+  STORE_GK.setGkProgress(progress);
+};
 
 window.gkShiftDate = function(days) {
   _gkDate = days === 0 ? STORE.todayKey() : shiftDate(_gkDate, days);
@@ -535,100 +570,123 @@ window.gkShiftDate = function(days) {
   renderGkCommon();
 };
 
-// ---------- 训练子页 ----------
-function renderGkQuiz(highlightId) {
-  const sections = ['行测','申论'];
-  const cats = {
-    '行测': ['all','言语理解','判断推理','数量关系','资料分析'],
-    '申论': ['all','材料阅读','归纳概括','写作要点'],
-  };
-  let list = GK_QUIZ.filter(q => q.section === _gkSection);
-  if (_gkCat !== 'all') list = list.filter(q => q.category === _gkCat);
+// ---------- 训练子页(图形推理真题,每天2道) ----------
+async function renderGkQuiz() {
+  const today = STORE.todayKey();
+  $('#gk-body').innerHTML = `
+    <div style="text-align:center;padding:30px;color:var(--oak);font-size:13px;">🎯 正在加载今日图推真题...</div>`;
 
-  // 分页
-  const total = list.length;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  if (_gkPage > pages) _gkPage = pages;
-  const pageList = list.slice((_gkPage-1)*PAGE_SIZE, _gkPage*PAGE_SIZE);
+  const data = await fetchGkDaily(today);
+  const quiz = (data && data.quiz) || [];
   const progress = STORE_GK.gkProgress();
 
-  $('#gk-body').innerHTML = `
-    <div class="tabs" style="margin-bottom:8px;">
-      ${sections.map(s => `<div class="tab ${_gkSection===s?'active':''}" data-s="${s}">${s==='行测'?'🧩':'✍️'} ${s}</div>`).join('')}
-    </div>
-    <div class="tabs" style="margin-bottom:10px;">
-      ${cats[_gkSection].map(c => `<div class="tab ${_gkCat===c?'active':''}" data-c="${c}">${c==='all'?'全部':c}</div>`).join('')}
-    </div>
-    <div id="gk-quiz-list"></div>
-    <div class="gk-pager" id="gk-quiz-pager"></div>`;
+  if (!quiz.length) {
+    $('#gk-body').innerHTML = `
+      <div class="card">
+        <div class="card-hd">🎯 图形推理真题(每日 2 道)</div>
+        <div class="empty"><div class="empty-icon">🔍</div>今日图推题尚未生成,请稍后刷新</div>
+      </div>`;
+    return;
+  }
 
-  $$('#gk-body .tab[data-s]').forEach(t => t.onclick = () => {
-    _gkSection = t.dataset.s;
-    _gkCat = 'all';
-    _gkPage = 1;
-    renderGkQuiz();
-  });
-  $$('#gk-body .tab[data-c]').forEach(t => t.onclick = () => {
-    _gkCat = t.dataset.c;
-    _gkPage = 1;
-    renderGkQuiz();
-  });
+  $('#gk-body').innerHTML = `
+    <div class="card">
+      <div class="card-hd">🎯 图形推理真题 <span class="badge">每日 2 道</span></div>
+      <p style="font-size:12px;color:var(--leaf);margin-bottom:12px;">📌 真题来源已标注在每道题顶部,点击选项即判对错,答错自动进错题集</p>
+      <div id="gk-quiz-list"></div>
+    </div>`;
 
   const listEl = $('#gk-quiz-list');
-  listEl.innerHTML = pageList.map(q => {
+  listEl.innerHTML = quiz.map(q => {
     const faved = isFav('quiz', q.id);
     const answered = progress.correct[q.id] || progress.wrong[q.id] || 0;
     return `
       <div class="quiz-card">
         <div class="quiz-head">
-          <span class="difficulty-${diffClass(q.level)}">${q.level}</span>
-          <span class="quiz-cat">${q.section} · ${q.category}</span>
+          <span class="zhen-badge">🧩 图推真题</span>
+          <span class="quiz-cat">${esc(q.source)}</span>
           <button class="fav-star ${faved?'active':''}" onclick="toggleGkFav('quiz','${q.id}')">${faved?'★':'☆'}</button>
         </div>
-        <div class="quiz-question">${esc(q.question)}</div>
+        <div class="quiz-question">${esc(q.stem)}</div>
+        <div class="tuxing-img"><img src="${esc(q.image)}" alt="图形推理题" loading="lazy" /></div>
         <div class="quiz-options" id="quiz-opt-${q.id}">
-          ${q.options.map(o => {
-            const letter = o[0];
-            return `<div class="quiz-option" data-q="${q.id}" data-p="${letter}" data-a="${q.answer}" data-correct="${letter===q.answer}">
-              <span class="quiz-opt-letter">${letter}</span><span>${esc(o.slice(2))}</span>
-            </div>`;
-          }).join('')}
+          ${['A','B','C','D'].map(letter => `
+            <div class="quiz-option" data-q="${q.id}" data-p="${letter}" data-a="${q.answer}" data-correct="${letter===q.answer}">
+              <span class="quiz-opt-letter">${letter}</span><span>选项 ${letter}</span>
+            </div>`).join('')}
         </div>
-        ${answered ? '' : ''}
         <div class="quiz-explain" id="quiz-exp-${q.id}" style="display:none;"></div>
+        <div class="feed-actions" style="margin-top:10px;">
+          <span class="left">📌 来源:${esc(q.source)}</span>
+          <span>${answered ? '<span style="color:var(--moss);font-size:11px;">已作答</span>' : ''}</span>
+        </div>
       </div>`;
-  }).join('') || '<div class="empty"><div class="empty-icon">📝</div>该分类暂无题目</div>';
+  }).join('');
 
-  // 绑定答题事件
-  $$('.quiz-option').forEach(opt => {
-    if (opt.dataset.q !== highlightId) return;
+  // 绑定答题
+  $$('#gk-quiz-list .quiz-option').forEach(opt => {
     opt.onclick = () => {
       const qid = opt.dataset.q, pick = opt.dataset.p;
-      const correct = opt.dataset.correct === 'true';
-      answerQuiz(qid, pick);
+      answerTuxing(qid, pick);
     };
   });
-  // 未高亮时也绑定(默认全部可答)
-  if (!highlightId) {
-    $$('.quiz-option').forEach(opt => {
-      opt.onclick = () => {
-        const qid = opt.dataset.q, pick = opt.dataset.p;
-        answerQuiz(qid, pick);
-      };
-    });
-  }
-
-  const pager = $('#gk-quiz-pager');
-  pager.innerHTML = pages > 1 ? Array.from({length: pages}, (_, i) =>
-    `<button class="btn btn-sm" style="${_gkPage===i+1?'background:var(--deep);color:var(--cream);':''}" onclick="_gkPage=${i+1};renderGkQuiz()">${i+1}</button>`).join('') : '';
 }
+
+// 图推题答题
+window.answerTuxing = function(id, pick) {
+  const qp = STORE_GK.gkQuizPool();
+  const q = qp.find(x => x.id === id);
+  if (!q) return;
+  const correct = pick === q.answer;
+  const optEls = $$(`#quiz-opt-${id} .quiz-option`);
+  optEls.forEach(o => { o.style.pointerEvents = 'none'; });
+  optEls.forEach(o => {
+    if (o.dataset.p === q.answer) o.classList.add('correct');
+    else if (o.dataset.p === pick) o.classList.add('wrong');
+  });
+  const exp = $('#quiz-exp-' + id);
+  if (exp) {
+    exp.style.display = 'block';
+    exp.innerHTML = correct
+      ? `✅ 回答正确!答案:${q.answer} | 来源:${esc(q.source)}`
+      : `❌ 回答错误。正确答案:${q.answer} | 来源:${esc(q.source)}`;
+  }
+  const progress = STORE_GK.gkProgress();
+  if (correct) {
+    progress.correct[id] = (progress.correct[id] || 0) + 1;
+    const today = STORE.todayKey();
+    const reward = STORE_GK.gkReward();
+    const count = reward[today] || 0;
+    if (count < 5) {
+      reward[today] = count + 1;
+      STORE_GK.setGkReward(reward);
+      addCoin(0.2, '答对图推真题');
+      toast('✅ 回答正确 +0.2 金币');
+    } else {
+      toast('✅ 回答正确(今日奖励已达上限)');
+    }
+  } else {
+    progress.wrong[id] = (progress.wrong[id] || 0) + 1;
+    toast('❌ 回答错误,已收入错题集');
+  }
+  STORE_GK.setGkProgress(progress);
+};
 
 // ---------- 复习子页 ----------
 function renderGkReview() {
   const progress = STORE_GK.gkProgress();
   const fav = STORE_GK.gkFav();
+  const qp = STORE_GK.gkQuizPool();   // 图推池
+  const pool = STORE_GK.gkPool();     // 常识池(含真题)
   const wrongIds = Object.keys(progress.wrong);
-  const wrongList = GK_QUIZ.filter(q => wrongIds.includes(q.id));
+  // 错题可能来自:图推(qp)或常识真题(pool)
+  const wrongList = wrongIds.map(id => {
+    const fromQp = qp.find(x => x.id === id);
+    if (fromQp) return { ...fromQp, kind: 'tuxing' };
+    const fromPool = pool.find(x => x.id === id);
+    if (fromPool) return { ...fromPool, kind: 'zhen' };
+    return null;
+  }).filter(Boolean);
   const favCommon = fav.filter(f => f.type === 'common');
   const favQuiz = fav.filter(f => f.type === 'quiz');
 
@@ -654,21 +712,22 @@ function renderGkReview() {
     listEl.innerHTML = wrongList.map(q => `
       <div class="quiz-card">
         <div class="quiz-head">
-          <span class="difficulty-${diffClass(q.level)}">${q.level}</span>
-          <span class="quiz-cat">${q.section} · ${q.category}</span>
+          <span class="zhen-badge">${q.kind === 'tuxing' ? '🧩 图推真题' : '📝 常识真题'}</span>
+          <span class="quiz-cat">${esc(q.source || '')}</span>
           <span style="color:var(--red);font-size:11px;">❌ ${progress.wrong[q.id]} 次</span>
         </div>
-        <div class="quiz-question">${esc(q.question)}</div>
+        <div class="quiz-question">${esc(q.stem || q.title || '')}</div>
+        ${q.image ? `<div class="tuxing-img"><img src="${esc(q.image)}" alt="图推题" loading="lazy" /></div>` : ''}
         <div class="quiz-options" id="quiz-opt-${q.id}">
-          ${q.options.map(o => {
-            const letter = o[0];
+          ${(q.options && q.options.length ? q.options : ['A','B','C','D'].map(l => l + '、')).map(o => {
+            const letter = (o || 'A')[0];
             return `<div class="quiz-option ${letter===q.answer?'correct':''}" style="pointer-events:none;">
-              <span class="quiz-opt-letter">${letter}</span><span>${esc(o.slice(2))}</span>
+              <span class="quiz-opt-letter">${letter}</span><span>${esc((o||'选项').slice(2) || '选项')}</span>
               ${letter===q.answer?'<span class="quiz-tick">✓</span>':''}
             </div>`;
           }).join('')}
         </div>
-        <div class="quiz-explain" style="display:block;">💡 ${esc(q.explain)}</div>
+        <div class="quiz-explain" style="display:block;">💡 正确答案:${q.answer} | 来源:${esc(q.source || '')}</div>
         <div class="feed-actions" style="margin-top:10px;">
           <span class="left">正确答案:${q.answer}</span>
           <button class="btn btn-sm btn-ghost" onclick="removeWrong('${q.id}')">从错题集移除</button>
@@ -676,39 +735,33 @@ function renderGkReview() {
       </div>`).join('');
   } else {
     let html = '';
-    const pool = STORE_GK.gkPool();
     const commons = favCommon.map(f => pool.find(c => c.id === f.refId)).filter(Boolean);
     if (commons.length) {
       html += `<div class="card"><div class="card-hd">📖 收藏的常识</div>${commons.map(c => `
         <div class="feed-item">
           <div class="feed-cat">${esc(c.field)}</div>
-          <div class="feed-title">${esc(c.title)}</div>
-          <div class="feed-text">${esc(c.brief)}</div>
+          <div class="feed-title">${esc(c.title || '真题·常识')}</div>
+          <div class="feed-text">${esc(c.stem || c.brief || '')}</div>
           <div class="feed-actions">
-            <span class="left">${esc(c.source)}</span>
+            <span class="left">${esc(c.source || '')}</span>
             <button class="btn btn-sm btn-ghost" onclick="toggleGkFav('common','${c.id}')">取消收藏</button>
           </div>
         </div>`).join('')}</div>`;
     }
-    const quizs = favQuiz.map(f => GK_QUIZ.find(q => q.id === f.refId)).filter(Boolean);
+    const quizs = favQuiz.map(f => {
+      const fromQp = qp.find(q => q.id === f.refId);
+      return fromQp ? { ...fromQp, kind: 'tuxing' } : null;
+    }).filter(Boolean);
     if (quizs.length) {
-      html += `<div class="card"><div class="card-hd">🎯 收藏的题目</div>${quizs.map(q => `
+      html += `<div class="card"><div class="card-hd">🎯 收藏的图推真题</div>${quizs.map(q => `
         <div class="quiz-card">
           <div class="quiz-head">
-            <span class="difficulty-${diffClass(q.level)}">${q.level}</span>
-            <span class="quiz-cat">${q.section} · ${q.category}</span>
+            <span class="zhen-badge">🧩 图推真题</span>
+            <span class="quiz-cat">${esc(q.source || '')}</span>
           </div>
-          <div class="quiz-question">${esc(q.question)}</div>
-          <div class="quiz-options" id="quiz-opt-${q.id}">
-            ${q.options.map(o => {
-              const letter = o[0];
-              return `<div class="quiz-option ${letter===q.answer?'correct':''}" style="pointer-events:none;">
-                <span class="quiz-opt-letter">${letter}</span><span>${esc(o.slice(2))}</span>
-                ${letter===q.answer?'<span class="quiz-tick">✓</span>':''}
-              </div>`;
-            }).join('')}
-          </div>
-          <div class="quiz-explain" style="display:block;">💡 ${esc(q.explain)}</div>
+          <div class="quiz-question">${esc(q.stem || '')}</div>
+          <div class="tuxing-img"><img src="${esc(q.image)}" alt="图推题" loading="lazy" /></div>
+          <div class="quiz-explain" style="display:block;">💡 正确答案:${q.answer} | 来源:${esc(q.source || '')}</div>
           <div class="feed-actions" style="margin-top:10px;">
             <span class="left">正确答案:${q.answer}</span>
             <button class="btn btn-sm btn-ghost" onclick="toggleGkFav('quiz','${q.id}')">取消收藏</button>
