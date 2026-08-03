@@ -1,5 +1,5 @@
 // WorkBuddy Service Worker · 离线缓存
-const CACHE = 'workbuddy-v12-daily-20260804';
+const CACHE = 'workbuddy-v13-dailyfix-20260804';
 const ASSETS = [
   './',
   './index.html',
@@ -24,12 +24,28 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// 缓存优先策略:已缓存静态资源直接用,网络作为后备
+// 动态内容(daily/*.json)网络优先,每次从服务器拉取最新;失败才回退缓存
+function networkFirst(request) {
+  return fetch(request).then(resp => {
+    if (resp && resp.status === 200) {
+      const clone = resp.clone();
+      caches.open(CACHE).then(c => c.put(request, clone));
+    }
+    return resp;
+  }).catch(() => caches.match(request));
+}
+
+// 静态资源缓存优先;动态 daily 数据网络优先
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  const url = new URL(e.request.url);
+  // 每天更新的常识数据:必须走网络,拿到最新内容
+  if (url.pathname.includes('/daily') && url.pathname.endsWith('.json')) {
+    e.respondWith(networkFirst(e.request).then(r => r || caches.match('./index.html')));
+    return;
+  }
   e.respondWith(
     caches.match(e.request).then(cached => cached || fetch(e.request).then(resp => {
-      // 缓存新资源
       if (resp && resp.status === 200 && resp.type === 'basic') {
         const clone = resp.clone();
         caches.open(CACHE).then(c => c.put(e.request, clone));
