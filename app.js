@@ -12,6 +12,8 @@ const STORE = {
   setTodos:  (v) => DB.set('wb_todos', v),
   records:   () => DB.get('wb_records', []),
   setRecords:(v) => DB.set('wb_records', v),
+  recordTypes:() => DB.get('wb_record_types', []),
+  setRecordTypes:(v) => DB.set('wb_record_types', v),
   journal:   () => DB.get('wb_journal', []),
   setJournal:(v) => DB.set('wb_journal', v),
   notes:     () => DB.get('wb_notes', []),
@@ -1094,6 +1096,25 @@ window.showCycleSettingsModal = function(firstTime) {
   });
 };
 
+// ============= 账单:内置类别 =============
+const MONEY_BUILTIN_TYPES = {
+  'var':    ['餐饮', '交通', '日用品', '娱乐'],
+  'fixed':  ['房租', '水电', '网费', '订阅'],
+  'income': ['工资', '兼职', '投资', '红包', '其他'],
+};
+// 合并内置 + 用户自定义类别
+function allMoneyTypes(typeKey) {
+  const builtin = MONEY_BUILTIN_TYPES[typeKey] || [];
+  const custom = STORE.recordTypes();
+  const merged = [...builtin];
+  custom.forEach(c => { if (!merged.includes(c)) merged.push(c); });
+  return merged;
+}
+// 账单状态变量
+let _moneyFilter = 'all';   // 'all' | 'YYYY-MM'
+let _moneyPage = 1;         // 加载更多页码
+let _moneyMonth = null;     // 图表浏览月份 'YYYY-MM'
+
 // ============= 视图:财富工坊 =============
 function viewMoney() {
   $('#page-title').innerHTML = '💰 财富工坊';
@@ -1103,10 +1124,16 @@ function viewMoney() {
 
   const records = STORE.records();
   const today = STORE.todayKey();
+  const curMonth = today.slice(0, 7);
+  if (!_moneyMonth) _moneyMonth = curMonth;
+
   const todaySpent = records.filter(r => r.date === today && r.type !== 'income').reduce((s, r) => s + Number(r.amount), 0);
-  const monthSpent = records.filter(r => r.date.startsWith(today.slice(0,7)) && r.type !== 'income').reduce((s, r) => s + Number(r.amount), 0);
-  const fixedSpent = records.filter(r => r.date.startsWith(today.slice(0,7)) && r.type === 'fixed').reduce((s, r) => s + Number(r.amount), 0);
-  const income = records.filter(r => r.date.startsWith(today.slice(0,7)) && r.type === 'income').reduce((s, r) => s + Number(r.amount), 0);
+  const monthSpent = records.filter(r => r.date.startsWith(curMonth) && r.type !== 'income').reduce((s, r) => s + Number(r.amount), 0);
+  const fixedSpent = records.filter(r => r.date.startsWith(curMonth) && r.type === 'fixed').reduce((s, r) => s + Number(r.amount), 0);
+  const income = records.filter(r => r.date.startsWith(curMonth) && r.type === 'income').reduce((s, r) => s + Number(r.amount), 0);
+  // 历史累计
+  const totalSpent = records.filter(r => r.type !== 'income').reduce((s, r) => s + Number(r.amount), 0);
+  const totalIncome = records.filter(r => r.type === 'income').reduce((s, r) => s + Number(r.amount), 0);
   const coins = STORE.coins();
   const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth()+1, 0).getDate();
   const budget = STORE.setting().dailyBudget || 30;
@@ -1120,7 +1147,7 @@ function viewMoney() {
   else if (todaySpent <= 30) savedCoinToday = 1;
   else savedCoinToday = 0;
 
-  // 周图表
+  // 周图表(保留)
   const weekData = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date(); d.setDate(d.getDate() - i);
@@ -1129,6 +1156,58 @@ function viewMoney() {
     weekData.push({ day: ['日','一','二','三','四','五','六'][d.getDay()], amount: s });
   }
   const maxAmt = Math.max(...weekData.map(d => d.amount), 1);
+
+  // ===== 月度分析数据 =====
+  const monthRecords = records.filter(r => r.date.startsWith(_moneyMonth) && r.type !== 'income');
+  const monthSpentTotal = monthRecords.reduce((s, r) => s + Number(r.amount), 0);
+  const monthIncome = records.filter(r => r.date.startsWith(_moneyMonth) && r.type === 'income').reduce((s, r) => s + Number(r.amount), 0);
+  // 近6月柱状图
+  const barData = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(_moneyMonth + '-01T00:00:00');
+    d.setMonth(d.getMonth() - i);
+    const mk = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const s = records.filter(r => r.date.startsWith(mk) && r.type !== 'income').reduce((s, r) => s + Number(r.amount), 0);
+    barData.push({ month: mk, label: `${d.getMonth()+1}月`, amount: s, isCur: mk === _moneyMonth });
+  }
+  const maxBar = Math.max(...barData.map(b => b.amount), 1);
+  // 分类占比(所选月,Top6+其他)
+  const catMap = {};
+  monthRecords.forEach(r => { catMap[r.name] = (catMap[r.name] || 0) + Number(r.amount); });
+  const catSorted = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
+  const catTop = catSorted.slice(0, 6);
+  const catOther = catSorted.slice(6);
+  const catOtherTotal = catOther.reduce((s, c) => s + c[1], 0);
+  if (catOtherTotal > 0) catTop.push(['其他', catOtherTotal]);
+  const catColors = ['#D64550','#E8A87C','#F0D58C','#7DBF8A','#5A7A4A','#C4A882','#9AB0B3'];
+  // 环形图 conic-gradient
+  let donutCss = '', legendHtml = '';
+  if (monthSpentTotal > 0) {
+    let acc = 0;
+    donutCss = catTop.map((c, i) => {
+      const start = acc / monthSpentTotal * 360;
+      acc += c[1];
+      const end = acc / monthSpentTotal * 360;
+      return `${catColors[i % catColors.length]} ${start}deg ${end}deg`;
+    }).join(',');
+    legendHtml = catTop.map((c, i) => `
+      <div class="legend-item">
+        <i style="background:${catColors[i % catColors.length]}"></i>
+        <span class="legend-name">${esc(c[0])}</span>
+        <span class="legend-amt">¥${c[1].toFixed(0)}</span>
+        <span class="legend-pct">${(c[1] / monthSpentTotal * 100).toFixed(1)}%</span>
+      </div>`).join('');
+  }
+
+  // ===== 账单列表数据 =====
+  const months = [...new Set(records.map(r => r.date.slice(0, 7)))].sort().reverse();
+  let list = records;
+  if (_moneyFilter !== 'all') list = list.filter(r => r.date.startsWith(_moneyFilter));
+  list = [...list].sort((a, b) => (b.date < a.date ? -1 : (b.date > a.date ? 1 : 0)));
+  const totalCount = list.length;
+  if (_moneyPage * 10 > totalCount && _moneyPage > 1) _moneyPage = Math.max(1, Math.ceil(totalCount / 10));
+  const shown = list.slice(0, _moneyPage * 10);
+  const filterLabel = _moneyFilter === 'all' ? '全部账单' : `${_moneyFilter.slice(0,4)}年${Number(_moneyFilter.slice(5,7))}月`;
 
   $('#page-body').innerHTML = `
     <div class="money-grid">
@@ -1149,6 +1228,11 @@ function viewMoney() {
       </div>
     </div>
 
+    <div class="total-line">
+      <span>📊 历史累计支出 <b>¥${totalSpent.toFixed(2)}</b></span>
+      <span>历史累计收入 <b style="color:var(--moss);">¥${totalIncome.toFixed(2)}</b></span>
+    </div>
+
     <div class="card">
       <div class="card-hd">💰 今日可变支出 <span class="badge" style="background:var(--bright);color:var(--deep);">今日 ¥${todaySpent}</span></div>
       <p style="font-size:12px;color:var(--leaf);margin-bottom:10px;">
@@ -1165,6 +1249,40 @@ function viewMoney() {
     </div>
 
     <div class="card">
+      <div class="card-hd">📈 月度分析
+        <span class="money-month-nav">
+          <button class="btn btn-sm btn-ghost" onclick="moneyShiftMonth(-1)">←</button>
+          <span class="money-month-label">${_moneyMonth.slice(0,4)}年${Number(_moneyMonth.slice(5,7))}月</span>
+          <button class="btn btn-sm btn-ghost" onclick="moneyShiftMonth(1)">→</button>
+        </span>
+      </div>
+      <div class="month-summary">
+        <div>支出 <b style="color:var(--red);">¥${monthSpentTotal.toFixed(2)}</b></div>
+        <div>收入 <b style="color:var(--moss);">¥${monthIncome.toFixed(2)}</b></div>
+        <div>结余 <b style="color:var(--deep);">¥${(monthIncome - monthSpentTotal).toFixed(2)}</b></div>
+      </div>
+      <div class="bar-chart bar-chart-month" id="month-bar">
+        ${barData.map(b => `
+          <div class="bar ${b.isCur?'cur':''}" style="height:${(b.amount/maxBar*100)}%;" onclick="moneyFilterMonth('${b.month}')" title="点击查看该月账单">
+            <div class="val">${b.amount ? '¥' + b.amount.toFixed(0) : ''}</div>
+            <div class="lbl">${b.label}</div>
+          </div>`).join('')}
+      </div>
+      <div class="donut-wrap">
+        ${monthSpentTotal > 0 ? `
+          <div class="donut-chart" style="background:conic-gradient(${donutCss});">
+            <div class="donut-inner">
+              <div class="donut-total">¥${monthSpentTotal.toFixed(0)}</div>
+              <div class="donut-sub">${_moneyMonth.slice(0,4)}.${Number(_moneyMonth.slice(5,7))} 支出</div>
+            </div>
+          </div>
+          <div class="chart-legend">${legendHtml}</div>` : `
+          <div class="empty" style="padding:20px;"><div class="empty-icon">🍃</div>本月暂无支出记录</div>`}
+      </div>
+      <div class="chart-src">数据来源:本地账单记录(wb_records · ${filterLabel} · 共 ${records.length} 笔)</div>
+    </div>
+
+    <div class="card">
       <div class="card-hd">🎯 心愿兑换清单</div>
       <div class="wish-grid">
         <div class="wish-card"><div class="amt">10</div><div class="lbl">小小心愿</div></div>
@@ -1176,21 +1294,32 @@ function viewMoney() {
     </div>
 
     <div class="card">
-      <div class="card-hd">📋 最近记录</div>
+      <div class="card-hd">📋 账单记录 <span class="badge">${filterLabel}</span></div>
+      <div class="tabs money-filter-tabs" id="money-filter-tabs">
+        <div class="tab ${_moneyFilter==='all'?'active':''}" data-m="all">全部</div>
+        ${months.map(m => `<div class="tab ${_moneyFilter===m?'active':''}" data-m="${m}">${Number(m.slice(5,7))}月</div>`).join('')}
+      </div>
       <div class="record-list" id="record-list"></div>
+      <div id="money-loadmore" style="text-align:center;margin-top:12px;"></div>
     </div>`;
 
-  // 渲染图表
+  // 周图表
   $('#week-chart').innerHTML = weekData.map(d => `
     <div class="bar" style="height:${(d.amount/maxAmt*100)}%;">
       <div class="val">${d.amount||''}</div>
       <div class="lbl">${d.day}</div>
     </div>`).join('');
 
-  // 渲染记录
-  const list = $('#record-list');
-  const recent = records.slice(0, 10);
-  list.innerHTML = recent.length ? recent.map(r => `
+  // 月份筛选 tabs
+  $$('#money-filter-tabs .tab').forEach(t => t.onclick = () => {
+    _moneyFilter = t.dataset.m;
+    _moneyPage = 1;
+    viewMoney();
+  });
+
+  // 账单列表
+  const listEl = $('#record-list');
+  listEl.innerHTML = shown.length ? shown.map(r => `
     <div class="record-item">
       <div class="record-left">
         <div class="record-cat">${r.type==='income'?'💵':(r.type==='fixed'?'📌':'💸')}</div>
@@ -1200,34 +1329,115 @@ function viewMoney() {
         </div>
       </div>
       <div class="record-amt ${r.type==='income'?'inc':'exp'}">${r.type==='income'?'+':'-'}¥${Number(r.amount).toFixed(2)}</div>
-    </div>`).join('') : '<div class="empty"><div class="empty-icon">📝</div>还没有记录</div>';
+    </div>`).join('') : '<div class="empty"><div class="empty-icon">📝</div>该月份暂无记录</div>';
+
+  // 加载更多
+  const lm = $('#money-loadmore');
+  if (shown.length < totalCount) {
+    lm.innerHTML = `<button class="btn btn-sm btn-ghost load-more-btn" onclick="moneyLoadMore()">加载更多(已显示 ${shown.length} / 共 ${totalCount} 笔) ▼</button>`;
+  } else if (totalCount > 10) {
+    lm.innerHTML = `<span style="font-size:11px;color:var(--oak);">已显示全部 ${totalCount} 笔账单</span>`;
+  }
 }
 
+// 月份切换(图表)
+window.moneyShiftMonth = function(delta) {
+  const d = new Date(_moneyMonth + '-01T00:00:00');
+  const now = new Date();
+  d.setMonth(d.getMonth() + delta);
+  const mk = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  const nowMk = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  if (mk > nowMk) { toast('已是最近月份'); return; }
+  _moneyMonth = mk;
+  viewMoney();
+};
+
+// 柱状图点击 → 联动月份筛选
+window.moneyFilterMonth = function(month) {
+  _moneyFilter = month;
+  _moneyMonth = month;
+  _moneyPage = 1;
+  viewMoney();
+  const body = $('#page-body');
+  if (body) body.scrollIntoView({ behavior: 'smooth' });
+};
+
+// 加载更多
+window.moneyLoadMore = function() {
+  _moneyPage += 1;
+  viewMoney();
+};
+
 window.showRecordModal = function() {
+  const customTypes = STORE.recordTypes();
+  const builtinOpts = Object.entries(MONEY_BUILTIN_TYPES).map(([tk, list]) => `
+    <optgroup label="${tk==='var'?'可变支出':(tk==='fixed'?'固定支出':'收入')}">${list.map(n => `<option>${n}</option>`).join('')}</optgroup>`).join('');
+  const customOpts = customTypes.length ? `
+    <optgroup label="我的类别">${customTypes.map(n => `<option>${n}</option>`).join('')}</optgroup>` : '';
+
   showModal({
     title: '记一笔',
     content: `
       <div class="form-row"><label>类型</label>
-        <select name="type"><option value="var">可变支出</option><option value="fixed">固定支出</option><option value="income">收入</option></select>
+        <select name="type" onchange="moneyTypeChange(this.value)">
+          <option value="var">可变支出</option><option value="fixed">固定支出</option><option value="income">收入</option>
+        </select>
       </div>
       <div class="form-row"><label>类别</label>
-        <select name="name">
-          <optgroup label="可变支出"><option>餐饮</option><option>交通</option><option>日用品</option><option>娱乐</option></optgroup>
-          <optgroup label="固定支出"><option>房租</option><option>水电</option><option>工资</option><option>订阅</option></optgroup>
-          <optgroup label="收入"><option>工资</option><option>兼职</option><option>投资</option><option>红包</option><option>其他</option></optgroup>
+        <select name="name" onchange="moneyCustomToggle(this)">
+          ${builtinOpts}
+          ${customOpts}
+          <option value="__custom">➕ 自定义新类别…</option>
         </select>
+      </div>
+      <div class="form-row" id="custom-type-row" style="display:none;">
+        <label>新类别名称</label>
+        <input type="text" name="customName" class="custom-type-input" placeholder="如:宠物、学习、医疗..." maxlength="10">
       </div>
       <div class="form-row"><label>金额</label><input type="number" name="amount" step="0.01" placeholder="0.00"></div>
       <div class="form-row"><label>日期</label><input type="date" name="date" value="${STORE.todayKey()}"></div>`,
     onSave: (d) => {
       if (!d.amount || Number(d.amount) <= 0) { toast('请输入金额'); return false; }
+      let name = d.name;
+      if (d.name === '__custom') {
+        name = (d.customName || '').trim();
+        if (!name) { toast('请输入新类别名称'); return false; }
+        // 保存自定义类别(去重)
+        const types = STORE.recordTypes();
+        if (!types.includes(name)) {
+          types.push(name);
+          STORE.setRecordTypes(types);
+        }
+      }
       const records = STORE.records();
-      records.unshift({ id:'r-'+Date.now(), type:d.type, name:d.name, amount:d.amount, date:d.date });
+      records.unshift({ id:'r-'+Date.now(), type:d.type, name, amount:d.amount, date:d.date });
       STORE.setRecords(records);
       viewMoney();
-      toast('已记录');
+      toast('已记录 ✓');
     }
   });
+};
+
+// 类型切换 → 重置类别下拉为对应内置组
+window.moneyTypeChange = function(typeKey) {
+  const sel = document.querySelector('#modal select[name="name"]');
+  if (!sel) return;
+  const builtin = MONEY_BUILTIN_TYPES[typeKey] || [];
+  const custom = STORE.recordTypes();
+  sel.innerHTML = `
+    <optgroup label="${typeKey==='var'?'可变支出':(typeKey==='fixed'?'固定支出':'收入')}">${builtin.map(n => `<option>${n}</option>`).join('')}</optgroup>
+    ${custom.length ? `<optgroup label="我的类别">${custom.map(n => `<option>${n}</option>`).join('')}</optgroup>` : ''}
+    <option value="__custom">➕ 自定义新类别…</option>`;
+  moneyCustomToggle(sel);
+};
+
+// 选择"自定义新类别"时显示输入框
+window.moneyCustomToggle = function(sel) {
+  const row = document.getElementById('custom-type-row');
+  if (!row) return;
+  row.style.display = sel.value === '__custom' ? 'block' : 'none';
+  const input = row.querySelector('input');
+  if (input && sel.value === '__custom') input.focus();
 };
 
 // ============= 视图:时光胶囊 =============

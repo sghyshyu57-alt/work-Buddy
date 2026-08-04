@@ -387,6 +387,109 @@ input:focus, textarea:focus, select:focus { border-color: var(--moss); }
   font-size: 9px; color: var(--deep); font-weight: 700;
 }
 
+/* ========== 账单升级:历史累计/月度图表/分页 ========== */
+.total-line {
+  display: flex; justify-content: space-between; gap: 8px;
+  background: var(--cream); border-radius: var(--r-sm);
+  padding: 10px 14px; margin-bottom: 14px;
+  font-size: 12px; color: var(--leaf);
+  flex-wrap: wrap;
+}
+.total-line b { color: var(--red); font-size: 14px; margin-left: 4px; }
+
+.money-month-nav {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-left: auto;
+}
+.money-month-label {
+  font-size: 12px; font-weight: 800; color: var(--deep);
+  font-family: 'Courier New', monospace; min-width: 76px;
+  text-align: center;
+}
+.month-summary {
+  display: flex; justify-content: space-between;
+  background: white; border-radius: var(--r-sm);
+  padding: 10px 14px; margin-bottom: 12px;
+  font-size: 12px; color: var(--oak);
+  box-shadow: var(--shadow-sm);
+}
+.month-summary b { font-size: 14px; }
+
+.bar-chart-month {
+  height: 130px; margin-bottom: 16px;
+}
+.bar-chart-month .bar {
+  cursor: pointer;
+}
+.bar-chart-month .bar.cur {
+  background: linear-gradient(180deg, var(--red), var(--orange));
+}
+.bar-chart-month .bar:not(.cur):hover {
+  filter: brightness(1.15);
+}
+
+.donut-wrap {
+  display: flex; gap: 16px; align-items: center;
+  flex-wrap: wrap;
+  background: white; border-radius: var(--r-sm);
+  padding: 14px; box-shadow: var(--shadow-sm);
+}
+.donut-chart {
+  width: 130px; height: 130px; border-radius: 50%;
+  flex-shrink: 0; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto;
+}
+.donut-inner {
+  width: 92px; height: 92px;
+  background: var(--cream); border-radius: 50%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+}
+.donut-total {
+  font-family: 'Courier New', monospace;
+  font-size: 18px; font-weight: 800; color: var(--deep);
+}
+.donut-sub { font-size: 10px; color: var(--leaf); margin-top: 2px; }
+
+.chart-legend {
+  flex: 1; min-width: 140px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.legend-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px;
+}
+.legend-item i {
+  width: 12px; height: 12px; border-radius: 3px;
+  flex-shrink: 0;
+}
+.legend-name { color: var(--deep); flex: 1; }
+.legend-amt { color: var(--oak); font-family: 'Courier New', monospace; }
+.legend-pct { color: var(--moss); font-weight: 700; font-family: 'Courier New', monospace; }
+
+.chart-src {
+  margin-top: 10px; font-size: 10px;
+  color: var(--oak); text-align: center;
+  opacity: 0.8;
+}
+
+.money-filter-tabs { margin-bottom: 10px; }
+.load-more-btn {
+  width: 100%; padding: 10px;
+  border: 1.5px dashed var(--oak) !important;
+  background: transparent !important;
+  color: var(--leaf) !important;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+}
+.load-more-btn:hover { border-color: var(--moss) !important; color: var(--moss) !important; }
+
+.custom-type-input {
+  border: 1.5px solid var(--orange) !important;
+  background: #FFFDF7;
+}
+
 .wish-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .wish-card {
   background: white; border-radius: var(--r-sm);
