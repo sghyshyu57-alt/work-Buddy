@@ -1328,7 +1328,13 @@ function viewMoney() {
           <div class="meta">${r.date} · ${r.type==='income'?'收入':(r.type==='fixed'?'固定':'可变')}</div>
         </div>
       </div>
-      <div class="record-amt ${r.type==='income'?'inc':'exp'}">${r.type==='income'?'+':'-'}¥${Number(r.amount).toFixed(2)}</div>
+      <div class="record-right">
+        <div class="record-amt ${r.type==='income'?'inc':'exp'}">${r.type==='income'?'+':'-'}¥${Number(r.amount).toFixed(2)}</div>
+        <div class="record-ops">
+          <button class="record-op" title="编辑" onclick="editRecord('${r.id}')">✎</button>
+          <button class="record-op danger" title="删除" onclick="deleteRecord('${r.id}')">🗑</button>
+        </div>
+      </div>
     </div>`).join('') : '<div class="empty"><div class="empty-icon">📝</div>该月份暂无记录</div>';
 
   // 加载更多
@@ -1368,19 +1374,28 @@ window.moneyLoadMore = function() {
   viewMoney();
 };
 
-window.showRecordModal = function() {
+window.showRecordModal = function(editId) {
   const customTypes = STORE.recordTypes();
+  // 编辑模式:预填
+  let editing = null;
+  if (editId) {
+    editing = STORE.records().find(r => r.id === editId) || null;
+  }
+  const typeKey = editing ? editing.type : 'var';
   const builtinOpts = Object.entries(MONEY_BUILTIN_TYPES).map(([tk, list]) => `
-    <optgroup label="${tk==='var'?'可变支出':(tk==='fixed'?'固定支出':'收入')}">${list.map(n => `<option>${n}</option>`).join('')}</optgroup>`).join('');
+    <optgroup label="${tk==='var'?'可变支出':(tk==='fixed'?'固定支出':'收入')}">${list.map(n => `<option ${editing && editing.name===n && tk===typeKey ? 'selected':''}>${n}</option>`).join('')}</optgroup>`).join('');
   const customOpts = customTypes.length ? `
-    <optgroup label="我的类别">${customTypes.map(n => `<option>${n}</option>`).join('')}</optgroup>` : '';
+    <optgroup label="我的类别">${customTypes.map(n => `<option ${editing && editing.name===n ? 'selected':''}>${n}</option>`).join('')}</optgroup>` : '';
 
   showModal({
-    title: '记一笔',
+    title: editing ? '✎ 编辑账单' : '记一笔',
+    saveText: editing ? '保存修改' : '保存',
     content: `
       <div class="form-row"><label>类型</label>
         <select name="type" onchange="moneyTypeChange(this.value)">
-          <option value="var">可变支出</option><option value="fixed">固定支出</option><option value="income">收入</option>
+          <option value="var" ${typeKey==='var'?'selected':''}>可变支出</option>
+          <option value="fixed" ${typeKey==='fixed'?'selected':''}>固定支出</option>
+          <option value="income" ${typeKey==='income'?'selected':''}>收入</option>
         </select>
       </div>
       <div class="form-row"><label>类别</label>
@@ -1394,8 +1409,8 @@ window.showRecordModal = function() {
         <label>新类别名称</label>
         <input type="text" name="customName" class="custom-type-input" placeholder="如:宠物、学习、医疗..." maxlength="10">
       </div>
-      <div class="form-row"><label>金额</label><input type="number" name="amount" step="0.01" placeholder="0.00"></div>
-      <div class="form-row"><label>日期</label><input type="date" name="date" value="${STORE.todayKey()}"></div>`,
+      <div class="form-row"><label>金额</label><input type="number" name="amount" step="0.01" placeholder="0.00" value="${editing ? editing.amount : ''}"></div>
+      <div class="form-row"><label>日期</label><input type="date" name="date" value="${editing ? editing.date : STORE.todayKey()}"></div>`,
     onSave: (d) => {
       if (!d.amount || Number(d.amount) <= 0) { toast('请输入金额'); return false; }
       let name = d.name;
@@ -1410,12 +1425,35 @@ window.showRecordModal = function() {
         }
       }
       const records = STORE.records();
-      records.unshift({ id:'r-'+Date.now(), type:d.type, name, amount:d.amount, date:d.date });
-      STORE.setRecords(records);
-      viewMoney();
-      toast('已记录 ✓');
+      if (editing) {
+        // 编辑:更新对应 id 的记录
+        const idx = records.findIndex(r => r.id === editing.id);
+        if (idx >= 0) {
+          records[idx] = { ...records[idx], type:d.type, name, amount:d.amount, date:d.date };
+          STORE.setRecords(records);
+        }
+        viewMoney();
+        toast('已保存修改 ✓');
+      } else {
+        records.unshift({ id:'r-'+Date.now(), type:d.type, name, amount:d.amount, date:d.date });
+        STORE.setRecords(records);
+        viewMoney();
+        toast('已记录 ✓');
+      }
     }
   });
+};
+
+// 编辑账单入口
+window.editRecord = function(id) { showRecordModal(id); };
+
+// 删除账单(二次确认)
+window.deleteRecord = function(id) {
+  if (!confirm('确定删除这笔账单?')) return;
+  const records = STORE.records().filter(r => r.id !== id);
+  STORE.setRecords(records);
+  viewMoney();
+  toast('已删除');
 };
 
 // 类型切换 → 重置类别下拉为对应内置组

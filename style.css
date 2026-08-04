@@ -365,6 +365,19 @@ input:focus, textarea:focus, select:focus { border-color: var(--moss); }
 .record-amt { font-family: 'Courier New', monospace; font-weight: 800; }
 .record-amt.exp { color: var(--red); }
 .record-amt.inc { color: var(--moss); }
+.record-right {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+}
+.record-ops { display: flex; gap: 4px; }
+.record-op {
+  width: 24px; height: 24px; border-radius: 6px;
+  border: none; background: var(--cream);
+  font-size: 12px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+}
+.record-op:hover { background: var(--bright); transform: scale(1.1); }
+.record-op.danger:hover { background: var(--red); color: white; }
 
 .bar-chart {
   display: flex; gap: 6px; align-items: flex-end;
