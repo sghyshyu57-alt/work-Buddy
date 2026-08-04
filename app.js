@@ -20,8 +20,6 @@ const STORE = {
   setNotes:  (v) => DB.set('wb_notes', v),
   reminders: () => DB.get('wb_reminders', []),
   setReminders:(v) => DB.set('wb_reminders', v),
-  coins:     () => DB.get('wb_coins', { balance: 0, history: [] }),
-  setCoins:  (v) => DB.set('wb_coins', v),
   setting:   () => DB.get('wb_setting', { pushEnabled: false, dailyBudget: 30 }),
   setSetting:(v) => DB.set('wb_setting', v),
   todayKey:  () => new Date().toISOString().slice(0, 10),
@@ -40,8 +38,6 @@ const STORE_GK = {
   setGkReads: (v) => DB.set('wb_gk_reads', v),
   gkProgress: () => DB.get('wb_gk_progress', { wrong: {}, correct: {} }), // {quizId: count}
   setGkProgress:(v) => DB.set('wb_gk_progress', v),
-  gkReward:   () => DB.get('wb_gk_reward', {}),          // {dateKey: 当日已奖题数}
-  setGkReward:(v) => DB.set('wb_gk_reward', v),
   gkFav:      () => DB.get('wb_gk_fav', []),             // [{id,type:'common'|'quiz',refId,favDate}]
   setGkFav:   (v) => DB.set('wb_gk_fav', v),
   cycle:      () => DB.get('wb_cycle', { periods: [], settings: { cycleLen: 28, periodLen: 5 } }),
@@ -107,29 +103,6 @@ function toast(msg, duration=2200) {
   t._tid = setTimeout(() => t.classList.remove('show'), duration);
 }
 
-function celebrate(title, msg) {
-  const m = document.createElement('div');
-  m.className = 'celebrate';
-  const colors = ['#D64550','#E8A87C','#F0D58C','#7DBF8A','#5A7A4A','#C4A882'];
-  let confetti = '';
-  for (let i = 0; i < 30; i++) {
-    const c = colors[i % colors.length];
-    const left = Math.random() * 100;
-    const delay = Math.random() * 0.4;
-    confetti += `<div class="confetti" style="left:${left}%;top:-10px;background:${c};animation-delay:${delay}s"></div>`;
-  }
-  m.innerHTML = `
-    <div class="celebrate-box">
-      ${confetti}
-      <div class="celebrate-emoji">🎉</div>
-      <div class="celebrate-title">${title}</div>
-      <div class="celebrate-msg">${msg}</div>
-      <button class="btn" onclick="this.closest('.celebrate').remove()">收下啦</button>
-    </div>`;
-  document.body.appendChild(m);
-  m.addEventListener('click', e => { if (e.target === m) m.remove(); });
-}
-
 // ============= 模态框 =============
 function showModal({ title, content, onSave, saveText='保存' }) {
   const root = $('#modal-root');
@@ -162,48 +135,10 @@ function showModal({ title, content, onSave, saveText='保存' }) {
   });
 }
 
-// ============= 金币系统 =============
-function addCoin(amount, reason) {
-  const c = STORE.coins();
-  c.balance += amount;
-  c.history.unshift({ amount, reason, date: new Date().toISOString() });
-  c.history = c.history.slice(0, 200);
-  STORE.setCoins(c);
-
-  // 庆祝弹窗
-  if (c.balance === 10 || c.balance === 20 || c.balance === 50 || c.balance === 100) {
-    setTimeout(() => celebrate(`🎉 金币达到 ${c.balance}!`, '恭喜!可以购买旭哥平衡首饰啦!'), 400);
-  }
-  return c.balance;
-}
-
-function checkDailyCoinReward() {
-  const today = STORE.todayKey();
-  const gkReads = STORE_GK.gkReads();
-  const todayReads = gkReads[today] || [];
-  const todos = STORE.todos().filter(t => t.date === today);
-
-  // 每日考公学习奖励(学习 4 条常识)
-  if (todayReads.length >= 4) {
-    const c = STORE.coins();
-    if (!c.history.some(h => h.reason === '今日学习完成' && h.date.startsWith(today))) {
-      addCoin(0.5, '今日学习完成');
-    }
-  }
-  // 待办全完成奖励
-  if (todos.length > 0 && todos.every(t => t.done)) {
-    const c = STORE.coins();
-    if (!c.history.some(h => h.reason === '今日待办完成' && h.date.startsWith(today))) {
-      addCoin(1, '今日待办完成');
-    }
-  }
-}
-
 // ============= 视图:今日中枢 =============
 function viewToday() {
   const today = STORE.todayKey();
   const todos = STORE.todos();
-  const c = STORE.coins();
 
   $('#page-title').innerHTML = '🏠 今日中枢';
   $('#page-sub').textContent = `${today} · 周${weekDay()}`;
@@ -220,7 +155,6 @@ function viewToday() {
   $('#page-body').innerHTML = `
     <div class="stat-grid">
       <div class="stat-card"><div class="num">${todos.filter(t => !t.done).length}</div><div class="lbl">待办</div></div>
-      <div class="stat-card green"><div class="num">${c.balance}</div><div class="lbl">金币</div></div>
       <div class="stat-card"><div class="num">${pendingReminders}</div><div class="lbl">提醒</div></div>
       <div class="stat-card"><div class="num">¥${daySpent}</div><div class="lbl">今日支出</div></div>
     </div>
@@ -236,7 +170,7 @@ function viewToday() {
 
     <div class="card">
       <div class="card-hd">🎯 每日考公学习 <span class="badge">${learnCount}/4</span></div>
-      <p style="font-size:12px;color:var(--leaf);margin-bottom:10px;">今日学习 4 条常识,可获得 0.5 金币;专项训练答对 5 题再得 1 金币</p>
+      <p style="font-size:12px;color:var(--leaf);margin-bottom:10px;">今日学习 4 条常识,完成每日积累</p>
       <button class="btn btn-ghost" onclick="gotoView('gk')">前往学习 →</button>
     </div>`;
 
@@ -263,7 +197,6 @@ window.toggleTodo = function(id) {
   if (t) {
     t.done = !t.done;
     STORE.setTodos(todos);
-    checkDailyCoinReward();
     viewToday();
   }
 };
@@ -351,7 +284,7 @@ window.toggleGkFav = function(type, refId) {
   if (_gkTab === 'review') viewGk(); else if (_gkTab === 'quiz') renderGkQuiz(); else renderGkCommon();
 };
 
-// 常识学习(不再单条发金币,由每日完成统一奖励)
+// 常识学习标记
 window.markCommonLearned = function(id) {
   const today = STORE.todayKey();
   const gkReads = STORE_GK.gkReads();
@@ -360,7 +293,6 @@ window.markCommonLearned = function(id) {
     gkReads[today].push(id);
     STORE_GK.setGkReads(gkReads);
     toast('已学习 ✓');
-    checkDailyCoinReward();
     viewGk();
   }
 };
@@ -547,18 +479,7 @@ window.answerZhen = function(id, pick) {
   const progress = STORE_GK.gkProgress();
   if (correct) {
     progress.correct[id] = (progress.correct[id] || 0) + 1;
-    // 答对奖励:0.2/题,每日封顶 5 题
-    const today = STORE.todayKey();
-    const reward = STORE_GK.gkReward();
-    const count = reward[today] || 0;
-    if (count < 5) {
-      reward[today] = count + 1;
-      STORE_GK.setGkReward(reward);
-      addCoin(0.2, '答对常识真题');
-      toast('✅ 回答正确 +0.2 金币');
-    } else {
-      toast('✅ 回答正确(今日奖励已达上限)');
-    }
+    toast('✅ 回答正确');
   } else {
     progress.wrong[id] = (progress.wrong[id] || 0) + 1;
     toast('❌ 回答错误,已收入错题集');
@@ -656,17 +577,7 @@ window.answerTuxing = function(id, pick) {
   const progress = STORE_GK.gkProgress();
   if (correct) {
     progress.correct[id] = (progress.correct[id] || 0) + 1;
-    const today = STORE.todayKey();
-    const reward = STORE_GK.gkReward();
-    const count = reward[today] || 0;
-    if (count < 5) {
-      reward[today] = count + 1;
-      STORE_GK.setGkReward(reward);
-      addCoin(0.2, '答对图推真题');
-      toast('✅ 回答正确 +0.2 金币');
-    } else {
-      toast('✅ 回答正确(今日奖励已达上限)');
-    }
+    toast('✅ 回答正确');
   } else {
     progress.wrong[id] = (progress.wrong[id] || 0) + 1;
     toast('❌ 回答错误,已收入错题集');
@@ -1070,9 +981,8 @@ window.showCycleRecordModal = function() {
       if (cd.periods.some(p => p.startDate === d.startDate)) { toast('该日期已记录'); return false; }
       cd.periods.push({ id:'cyc-'+Date.now(), startDate:d.startDate, endDate:d.endDate||'', weight:d.weight, temp:d.temp, note:d.note });
       STORE_GK.setCycle(cd);
-      addCoin(0.5, '记录生理周期');
       viewCycle();
-      toast('已记录 +0.5 金币');
+      toast('已记录');
     }
   });
 };
@@ -1134,18 +1044,10 @@ function viewMoney() {
   // 历史累计
   const totalSpent = records.filter(r => r.type !== 'income').reduce((s, r) => s + Number(r.amount), 0);
   const totalIncome = records.filter(r => r.type === 'income').reduce((s, r) => s + Number(r.amount), 0);
-  const coins = STORE.coins();
   const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth()+1, 0).getDate();
   const budget = STORE.setting().dailyBudget || 30;
   const monthBudget = budget * daysInMonth;
   const remaining = Math.max(0, monthBudget - monthSpent);
-
-  // 今日省钱奖励
-  let savedCoinToday = 0;
-  if (todaySpent === 0) savedCoinToday = 0;
-  else if (todaySpent <= 15) savedCoinToday = 2;
-  else if (todaySpent <= 30) savedCoinToday = 1;
-  else savedCoinToday = 0;
 
   // 周图表(保留)
   const weekData = [];
@@ -1221,11 +1123,6 @@ function viewMoney() {
         <div class="amt">¥${fixedSpent.toFixed(2)}</div>
         <div style="font-size:10px;color:var(--oak);margin-top:4px;">本月已扣</div>
       </div>
-      <div class="money-account coin">
-        <div class="lbl">金币账户</div>
-        <div class="amt" style="color:var(--red);">${coins.balance}</div>
-        <div style="font-size:10px;color:var(--oak);margin-top:4px;">1 金币 = 1 元</div>
-      </div>
     </div>
 
     <div class="total-line">
@@ -1235,12 +1132,7 @@ function viewMoney() {
 
     <div class="card">
       <div class="card-hd">💰 今日可变支出 <span class="badge" style="background:var(--bright);color:var(--deep);">今日 ¥${todaySpent}</span></div>
-      <p style="font-size:12px;color:var(--leaf);margin-bottom:10px;">
-        ${todaySpent===0?'🌳 今日零开支!奖励 0 金币':''}
-        ${todaySpent>0 && todaySpent<=15?'🌿 节省!今日可获 2 金币':''}
-        ${todaySpent>15 && todaySpent<=30?'🌱 一般,可获 1 金币':''}
-        ${todaySpent>30?'🍂 超支,无奖励':''}
-      </p>
+      <p style="font-size:12px;color:var(--leaf);margin-bottom:10px;">今日支出:${todaySpent===0?'零开支 🌳':(todaySpent<=15?'节省开支 🌿':(todaySpent<=30?'正常范围 🌱':'已超支 🍂'))}</p>
     </div>
 
     <div class="card">
@@ -1280,17 +1172,6 @@ function viewMoney() {
           <div class="empty" style="padding:20px;"><div class="empty-icon">🍃</div>本月暂无支出记录</div>`}
       </div>
       <div class="chart-src">数据来源:本地账单记录(wb_records · ${filterLabel} · 共 ${records.length} 笔)</div>
-    </div>
-
-    <div class="card">
-      <div class="card-hd">🎯 心愿兑换清单</div>
-      <div class="wish-grid">
-        <div class="wish-card"><div class="amt">10</div><div class="lbl">小小心愿</div></div>
-        <div class="wish-card"><div class="amt">20</div><div class="lbl">日常愿望</div></div>
-        <div class="wish-card"><div class="amt">50</div><div class="lbl">中级心愿</div></div>
-        <div class="wish-card"><div class="amt">100</div><div class="lbl">终极奖励 🎉</div></div>
-      </div>
-      <p style="font-size:11px;color:var(--leaf);margin-top:10px;text-align:center;">凑齐金币即可兑换!</p>
     </div>
 
     <div class="card">
@@ -1750,99 +1631,6 @@ function renderMiniCal() {
   el.innerHTML = html;
 }
 
-// ============= 视图:成就殿堂 =============
-function viewAchieve() {
-  $('#page-title').innerHTML = '🏆 成就殿堂';
-  $('#page-sub').textContent = '金币 · 徽章 · 卡片';
-  $('#page-actions').innerHTML = '';
-
-  const coins = STORE.coins();
-  const history = coins.history;
-  const weekEarns = {};
-  history.forEach(h => {
-    const wk = h.date.slice(0, 10);
-    const d = new Date(h.date);
-    const wkKey = `${d.getFullYear()}-W${Math.ceil(d.getDate()/7)}`;
-    weekEarns[wkKey] = (weekEarns[wkKey] || 0) + h.amount;
-  });
-
-  const last7Weeks = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(); d.setDate(d.getDate() - i*7);
-    const wkKey = `${d.getFullYear()}-W${Math.ceil(d.getDate()/7)}`;
-    last7Weeks.push({ wk: wkKey.slice(-3), amt: weekEarns[wkKey] || 0 });
-  }
-  const maxWk = Math.max(...last7Weeks.map(w => w.amt), 1);
-
-  // 本周明细
-  const weekStart = new Date();
-  weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-  const weekHistory = history.filter(h => new Date(h.date) >= weekStart);
-  const weekSum = weekHistory.reduce((s, h) => s + h.amount, 0);
-
-  // 徽章
-  const gkReadsTotal = Object.values(STORE_GK.gkReads()).flat().length;
-  const gkCorrectTotal = Object.values(STORE_GK.gkProgress().correct).reduce((s, n) => s + n, 0);
-  const badges = [
-    { e:'🌟', n:'7天全勤', unlocked: weekHistory.length > 0 },
-    { e:'📚', n:'常识积累50条', unlocked: gkReadsTotal >= 50 },
-    { e:'🎯', n:'答题小能手', unlocked: gkCorrectTotal >= 20 },
-    { e:'🩸', n:'周期记录者', unlocked: STORE_GK.cycle().periods.length >= 3 },
-    { e:'📝', n:'备忘录狂魔', unlocked: STORE.notes().length >= 20 },
-    { e:'💎', n:'金币100', unlocked: coins.balance >= 100 },
-    { e:'🎨', n:'手绘大师', unlocked: false },
-    { e:'🔥', n:'连续30天', unlocked: false },
-  ];
-
-  $('#page-body').innerHTML = `
-    <div class="stat-grid">
-      <div class="stat-card"><div class="num">${coins.balance}</div><div class="lbl">总金币</div></div>
-      <div class="stat-card green"><div class="num">${weekSum.toFixed(1)}</div><div class="lbl">本周</div></div>
-      <div class="stat-card"><div class="num">${badges.filter(b => b.unlocked).length}</div><div class="lbl">解锁徽章</div></div>
-      <div class="stat-card"><div class="num">${history.length}</div><div class="lbl">总记录</div></div>
-    </div>
-
-    <div class="card">
-      <div class="card-hd">📊 近 7 周金币趋势</div>
-      <div class="bar-chart" id="week-bar"></div>
-    </div>
-
-    <div class="card">
-      <div class="card-hd">🏅 成就徽章墙</div>
-      <div class="badge-grid">
-        ${badges.map(b => `
-          <div class="badge ${b.unlocked?'':'locked'}">
-            <div class="badge-emoji">${b.e}</div>
-            <div class="badge-name">${b.n}</div>
-          </div>`).join('')}
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-hd">💰 金币流水</div>
-      <div class="record-list" id="coin-history"></div>
-    </div>`;
-
-  $('#week-bar').innerHTML = last7Weeks.map(w => `
-    <div class="bar" style="height:${(w.amt/maxWk*100)}%;">
-      <div class="val">${w.amt || ''}</div>
-      <div class="lbl">${w.wk}</div>
-    </div>`).join('');
-
-  const histEl = $('#coin-history');
-  histEl.innerHTML = history.length ? history.slice(0,10).map(h => `
-    <div class="record-item">
-      <div class="record-left">
-        <div class="record-cat">🪙</div>
-        <div class="record-info">
-          <div class="name">${esc(h.reason)}</div>
-          <div class="meta">${h.date.slice(0,16).replace('T',' ')}</div>
-        </div>
-      </div>
-      <div class="record-amt inc">+${h.amount}</div>
-    </div>`).join('') : '<div class="empty"><div class="empty-icon">🪙</div>完成任务获取金币吧</div>';
-}
-
 // ============= 视图:设置 =============
 function viewSettings() {
   $('#page-title').innerHTML = '⚙️ 设置';
@@ -1922,11 +1710,9 @@ window.exportAll = function() {
     journal: STORE.journal(),
     notes: STORE.notes(),
     reminders: STORE.reminders(),
-    coins: STORE.coins(),
     setting: STORE.setting(),
     gkReads: STORE_GK.gkReads(),
     gkProgress: STORE_GK.gkProgress(),
-    gkReward: STORE_GK.gkReward(),
     gkFav: STORE_GK.gkFav(),
     cycle: STORE_GK.cycle(),
     exportDate: new Date().toISOString()
@@ -1950,6 +1736,8 @@ window.importData = function() {
     reader.onload = (ev) => {
       try {
         const data = JSON.parse(ev.target.result);
+        // 跳过旧版金币相关数据,防止旧备份回灌
+        ['coins', 'gkReward', 'gk_reward'].forEach(k => delete data[k]);
         Object.keys(data).forEach(k => {
           if (k === 'exportDate') return;
           localStorage.setItem('wb_' + k, JSON.stringify(data[k]));
@@ -1989,7 +1777,7 @@ window.requestPush = async function() {
 };
 
 // ============= 路由 =============
-const VIEWS = { today:viewToday, gk:viewGk, cycle:viewCycle, money:viewMoney, time:viewTime, remind:viewRemind, achieve:viewAchieve, settings:viewSettings };
+const VIEWS = { today:viewToday, gk:viewGk, cycle:viewCycle, money:viewMoney, time:viewTime, remind:viewRemind, settings:viewSettings };
 let _currentView = 'today';
 
 window.gotoView = function(name) {
@@ -2026,13 +1814,11 @@ function initData() {
       { id:'t-init-3', text:'前往「生理周期」记录身体状况', date:STORE.todayKey(), done:false }
     ]);
   }
-  // 初始化金币
-  const c = STORE.coins();
-  if (c.history.length === 0) {
-    addCoin(0, '初始化');
-    c.balance = 0; c.history = [];
-    STORE.setCoins(c);
-  }
+  // 一次性清理旧版金币数据(金币系统已移除)
+  try {
+    localStorage.removeItem('wb_coins');
+    localStorage.removeItem('wb_gk_reward');
+  } catch (e) {}
 }
 
 // Service Worker 注册
@@ -2052,8 +1838,3 @@ window.addEventListener('DOMContentLoaded', () => {
     $('#splash').classList.add('hidden');
   }, 1500);
 });
-
-// 检查每日金币奖励
-setInterval(() => {
-  checkDailyCoinReward();
-}, 60000);

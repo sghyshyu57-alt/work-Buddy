@@ -1,5 +1,5 @@
 // WorkBuddy Service Worker · 离线缓存
-const CACHE = 'workbuddy-v16-billedit-20260805';
+const CACHE = 'workbuddy-v17-nocoins-20260805';
 const ASSETS = [
   './',
   './index.html',
